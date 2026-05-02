@@ -3,6 +3,8 @@ package request
 import (
 	"fmt"
 	"io"
+	"log/slog"
+	"strconv"
 	"strings"
 
 	"http-from-tcp/internal/headers"
@@ -13,28 +15,31 @@ var (
 	MALFORMED_REQUEST_LINE error  = fmt.Errorf("malformed request-line")
 )
 
-type parsedState string
+type parseState string
 
 const (
-	DoneParsedState           parsedState = "done"
-	InitParsedState           parsedState = "initialized"
-	ParsingHeadersParsedState parsedState = "parsed_headers"
+	DoneParseState    parseState = "done"
+	InitParseState    parseState = "initialized"
+	HeadersParseState parseState = "headers"
+	BodyParseState    parseState = "body"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
-	State       parsedState
+	Body        string
+	State       parseState
 }
 
 func (r *Request) Done() bool {
-	return r.State == DoneParsedState
+	return r.State == DoneParseState
 }
 
 func newRequest() *Request {
 	return &Request{
-		State:   InitParsedState,
+		State:   InitParseState,
 		Headers: headers.NewHeaders(),
+		Body:    "",
 	}
 }
 
@@ -75,9 +80,10 @@ func (r *Request) parse(data []byte) (int, error) {
 
 outer:
 	for {
+		currentData := data[read:]
 		switch r.State {
-		case InitParsedState:
-			rl, n, err := parseRequestLine(string(data[read:]))
+		case InitParseState:
+			rl, n, err := parseRequestLine(string(currentData))
 			if err != nil {
 				return 0, err
 			}
@@ -89,9 +95,9 @@ outer:
 			r.RequestLine = *rl
 			read += n
 
-			r.State = ParsingHeadersParsedState
-		case ParsingHeadersParsedState:
-			n, done, err := r.Headers.Parse(data[read:])
+			r.State = HeadersParseState
+		case HeadersParseState:
+			n, done, err := r.Headers.Parse(currentData)
 			if err != nil {
 				return 0, err
 			}
@@ -100,9 +106,33 @@ outer:
 			}
 			read += n
 			if done {
-				r.State = DoneParsedState
+				r.State = BodyParseState
 			}
-		case DoneParsedState:
+		case BodyParseState:
+			contentLength := r.Headers.Get("Content-Length")
+			if contentLength == "" {
+				r.State = DoneParseState
+				break
+			}
+
+			contentLen, err := strconv.Atoi(contentLength)
+			if err != nil {
+				return 0, err
+			}
+
+			if len(currentData) == 0 {
+				break outer
+			}
+
+			remaining := min(contentLen-len(r.Body), len(currentData))
+			r.Body += string(currentData[:remaining])
+			read += remaining
+
+			slog.Info(fmt.Sprintf("%s-%s-%s", strconv.Itoa(remaining), string(currentData[:remaining]), string(r.Body)))
+			if len(r.Body) == contentLen {
+				r.State = DoneParseState
+			}
+		case DoneParseState:
 			break outer
 		}
 	}
