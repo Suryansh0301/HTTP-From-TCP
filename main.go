@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
+	"net"
 )
 
 func getLinesChannel(f io.ReadCloser) chan string {
@@ -24,17 +24,28 @@ func getLinesChannel(f io.ReadCloser) chan string {
 }
 
 func main() {
-	file, err := os.Open("message.txt")
+	listener, err := net.Listen("tcp", "localhost:42069")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer file.Close()
-	lines := getLinesChannel(file)
-	for line := range lines {
-		fmt.Printf("read: %s\n", line)
+	fmt.Println("started listening on port 42069")
+	defer listener.Close()
+	for {
+		connection, err := listener.Accept()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		go func(c net.Conn) {
+			fmt.Println("A connection has been accepted!")
+			defer c.Close()
+			lines := getLinesChannel(c)
+			for line := range lines {
+				fmt.Printf("read: %s\n", line)
+			}
+			fmt.Println("The connection has been closed!")
+		}(connection)
+
 	}
-	// scanner := bufio.NewScanner(file)
-	// for scanner.Scan() {
-	// 	fmt.Printf("read: %s\n", scanner.Bytes())
-	// }
+
 }
