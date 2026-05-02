@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"http-from-tcp/internal/headers"
 )
 
 var (
@@ -14,12 +16,14 @@ var (
 type parsedState string
 
 const (
-	DoneParsedState parsedState = "done"
-	InitParsedState parsedState = "initialized"
+	DoneParsedState           parsedState = "done"
+	InitParsedState           parsedState = "initialized"
+	ParsingHeadersParsedState parsedState = "parsed_headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	State       parsedState
 }
 
@@ -29,7 +33,8 @@ func (r *Request) Done() bool {
 
 func newRequest() *Request {
 	return &Request{
-		State: InitParsedState,
+		State:   InitParsedState,
+		Headers: headers.NewHeaders(),
 	}
 }
 
@@ -84,7 +89,19 @@ outer:
 			r.RequestLine = *rl
 			read += n
 
-			r.State = DoneParsedState
+			r.State = ParsingHeadersParsedState
+		case ParsingHeadersParsedState:
+			n, done, err := r.Headers.Parse(data[read:])
+			if err != nil {
+				return 0, err
+			}
+			if n == 0 {
+				break outer
+			}
+			read += n
+			if done {
+				r.State = DoneParsedState
+			}
 		case DoneParsedState:
 			break outer
 		}
