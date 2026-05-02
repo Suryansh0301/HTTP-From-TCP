@@ -95,7 +95,7 @@ outer:
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	request := newRequest()
-	buff := make([]byte, 8)
+	buff := make([]byte, 1024)
 	buffLen := 0
 
 	for !request.Done() {
