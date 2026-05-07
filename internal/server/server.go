@@ -1,20 +1,22 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"http-from-tcp/internal/request"
+	"http-from-tcp/internal/response"
 	"io"
 	"log"
 	"net"
 	"sync/atomic"
 )
 
-// close represented by false and open represented by trye
 type Server struct {
 	listener net.Listener
 	state    *atomic.Bool
 }
 
-func Serve(port int) (*Server, error) {
+func Serve(port int, handleFunc Handler) (*Server, error) {
 	list, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, err
@@ -28,7 +30,7 @@ func Serve(port int) (*Server, error) {
 		state:    &running,
 	}
 
-	go server.listen()
+	go server.listen(handleFunc)
 	return server, nil
 }
 
@@ -41,7 +43,7 @@ func (s *Server) Close() error {
 	return err
 }
 
-func (s *Server) listen() {
+func (s *Server) listen(handleFunc Handler) {
 	for {
 		conn, err := s.listener.Accept()
 
@@ -49,26 +51,56 @@ func (s *Server) listen() {
 			return
 		}
 		if err != nil {
-			//currently sirf error printing daali h
 			log.Println("Accept error:", err)
 		}
 
-		go s.handle(conn)
+		go s.handle(conn, handleFunc)
 	}
 }
 
-func (s *Server) handle(conn io.ReadWriteCloser) {
+func (s *Server) handle(conn io.ReadWriteCloser, handleFunc Handler) {
 	defer conn.Close()
-	output := []byte(
-		"HTTP/1.1 200 OK\r\n" +
-			"Content-Type: text/plain\r\n" +
-			"Content-Length: 13\r\n" +
-			"\r\n" +
-			"Hello World!\n",
-	)
-	_, err := conn.Write(output)
+
+	writeBuffer := bytes.NewBuffer(make([]byte, 0, 1024))
+
+	req, err := request.RequestFromReader(conn)
 	if err != nil {
 		log.Print(err)
 	}
 
+	handleErr := handleFunc(writeBuffer, req)
+	if handleErr != nil {
+		s.HandleError(conn, handleErr)
+		return
+	}
+
+	err = response.WriteStatusLine(conn, response.StatusCodeOK)
+	if err != nil {
+		log.Print(err)
+	}
+
+	err = response.WriteHeaders(conn, response.GetDefaultHeaders(writeBuffer.Len()))
+	if err != nil {
+		log.Print(err)
+	}
+
+	_, err = conn.Write(writeBuffer.Bytes())
+	if err != nil {
+		log.Print(err)
+	}
+}
+
+func (s *Server) HandleError(conn io.Writer, handleErr *HandlerError) {
+	err := response.WriteStatusLine(conn, response.StatusCode(handleErr.StatusCode))
+	if err != nil {
+		log.Print(err)
+	}
+	err = response.WriteHeaders(conn, response.GetDefaultHeaders(len(handleErr.Message)))
+	if err != nil {
+		log.Print(err)
+	}
+	_, err = conn.Write([]byte(fmt.Sprintf("%s\r\n", handleErr.Message)))
+	if err != nil {
+		log.Print(err)
+	}
 }
