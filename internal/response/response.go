@@ -3,25 +3,19 @@ package response
 import (
 	"bytes"
 	"fmt"
+	"http-from-tcp/constants"
+	"http-from-tcp/enums"
 	"http-from-tcp/internal/headers"
 	"io"
 	"strconv"
 )
 
-type StatusCode string
-
-const (
-	StatusCodeOK                  StatusCode = "200"
-	StatusCodeBadRequest          StatusCode = "400"
-	StatusCodeInternalServerError StatusCode = "500"
-)
-
 func (W *Writer) GetDefaultHeaders(contentLen int) headers.Headers {
 	headers := headers.NewHeaders()
 
-	headers.Set("Content-Length", strconv.Itoa(contentLen))
-	headers.Set("Connection", "close")
-	headers.Set("Content-Type", "text/plain")
+	headers.Set(constants.ContentLength, strconv.Itoa(contentLen))
+	headers.Set(constants.Connection, "close")
+	headers.Set(constants.ContentType, enums.ContentTypePlain.String())
 	return headers
 }
 
@@ -35,15 +29,15 @@ func NewWriter(conn io.Writer) *Writer {
 	}
 }
 
-func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+func (w *Writer) WriteStatusLine(statusCode enums.StatusCode) error {
 	var statusLine []byte
 	switch statusCode {
-	case StatusCodeOK:
-		statusLine = []byte("HTTP/1.1 200 OK\r\n")
-	case StatusCodeBadRequest:
-		statusLine = []byte("HTTP/1.1 400 Bad Request\r\n")
-	case StatusCodeInternalServerError:
-		statusLine = []byte("HTTP/1.1 500 Internal Server Error\r\n")
+	case enums.StatusCodeOK:
+		statusLine = []byte("HTTP/1.1 200 OK" + constants.CRLF)
+	case enums.StatusCodeBadRequest:
+		statusLine = []byte("HTTP/1.1 400 Bad Request" + constants.CRLF)
+	case enums.StatusCodeInternalServerError:
+		statusLine = []byte("HTTP/1.1 500 Internal Server Error" + constants.CRLF)
 	default:
 		return fmt.Errorf("invalid error code")
 	}
@@ -61,7 +55,7 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 	for headerKey := range headers {
 		byteHeaders = fmt.Appendf(byteHeaders, "%s: %s\r\n", headerKey, headers[headerKey])
 	}
-	byteHeaders = fmt.Append(byteHeaders, "\r\n")
+	byteHeaders = fmt.Append(byteHeaders, constants.CRLF)
 
 	_, err := w.writer.Write(byteHeaders)
 	if err != nil {
@@ -91,7 +85,7 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 		return size, err
 	}
 	size += n
-	n, err = w.WriteBody([]byte("\r\n"))
+	n, err = w.WriteBody([]byte(constants.CRLF))
 	if err != nil {
 		return size, err
 	}

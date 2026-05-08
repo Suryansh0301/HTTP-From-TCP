@@ -2,26 +2,26 @@ package main
 
 import (
 	"bufio"
-	"fmt"
+	"http-from-tcp/enums"
 	"log"
 	"net"
 	"os"
 )
 
 func main() {
-	raddr, err := net.ResolveUDPAddr("udp", "localhost:42069")
+	raddr, err := net.ResolveUDPAddr(enums.NetworkUDP.String(), "localhost:42069")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	conn, err := net.DialUDP("udp", nil, raddr)
+	conn, err := net.DialUDP(enums.NetworkUDP.String(), nil, raddr)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer conn.Close()
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Println(">")
+	log.Println(">")
 
 	for {
 		line, err := reader.ReadString('\n')

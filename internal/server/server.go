@@ -1,12 +1,13 @@
 package server
 
 import (
-	"fmt"
+	"http-from-tcp/enums"
 	"http-from-tcp/internal/request"
 	"http-from-tcp/internal/response"
 	"io"
 	"log"
 	"net"
+	"strconv"
 	"sync/atomic"
 )
 
@@ -15,22 +16,17 @@ type Server struct {
 	state    *atomic.Bool
 }
 
-func Serve(port int, handleFunc Handler) (*Server, error) {
-	list, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+type Handler func(w *response.Writer, req *request.Request)
+
+func Serve(port int, handleFunc Handler) (server *Server, err error) {
+	list, err := net.Listen(enums.NetworkTCP.String(), strconv.Itoa(port))
 	if err != nil {
-		return nil, err
+		return
 	}
 
-	var running atomic.Bool
-	running.Store(true)
-
-	server := &Server{
-		listener: list,
-		state:    &running,
-	}
-
+	server = newServer(list)
 	go server.listen(handleFunc)
-	return server, nil
+	return
 }
 
 func (s *Server) Close() error {
@@ -40,6 +36,16 @@ func (s *Server) Close() error {
 		log.Println(err)
 	}
 	return err
+}
+
+func newServer(listener net.Listener) *Server {
+	var running atomic.Bool
+	running.Store(true)
+
+	return &Server{
+		listener: listener,
+		state:    &running,
+	}
 }
 
 func (s *Server) listen(handleFunc Handler) {
@@ -64,7 +70,7 @@ func (s *Server) handle(conn io.ReadWriteCloser, handleFunc Handler) {
 
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		responseWriter.WriteStatusLine(response.StatusCodeBadRequest)
+		responseWriter.WriteStatusLine(enums.StatusCodeBadRequest)
 		responseWriter.WriteHeaders(responseWriter.GetDefaultHeaders(0))
 	}
 

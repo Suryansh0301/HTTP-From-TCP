@@ -3,6 +3,7 @@ package headers
 import (
 	"bytes"
 	"errors"
+	"http-from-tcp/constants"
 	"regexp"
 	"strings"
 )
@@ -19,7 +20,6 @@ func NewHeaders() Headers {
 }
 
 func (h Headers) Get(key string) string {
-
 	return h[strings.ToLower(string(key))]
 }
 
@@ -27,6 +27,7 @@ func (h Headers) Set(key, value string) {
 	if val := h.Get(key); val != "" {
 		value = strings.Join([]string{val, value}, ", ")
 	}
+
 	h[strings.ToLower(key)] = value
 }
 
@@ -42,7 +43,7 @@ func (h Headers) Parse(data []byte) (int, bool, error) {
 	bytesConsumed := 0
 	for {
 
-		headerIdx := bytes.Index(data, []byte("\r\n"))
+		headerIdx := bytes.Index(data, []byte(constants.CRLF))
 		if headerIdx == -1 {
 			return bytesConsumed, false, nil
 		}

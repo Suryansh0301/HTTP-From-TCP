@@ -2,7 +2,9 @@ package main
 
 import (
 	"crypto/sha256"
-	"fmt"
+	"encoding/hex"
+	"http-from-tcp/constants"
+	"http-from-tcp/enums"
 	headersPkg "http-from-tcp/internal/headers"
 	"http-from-tcp/internal/request"
 	"http-from-tcp/internal/response"
@@ -11,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -59,6 +62,16 @@ func request500() []byte {
 `)
 }
 
+// main initializes and starts the custom TCP-based HTTP server.
+// The server is used to test different HTTP response behaviors such as:
+//
+//   - status line writing
+//   - headers and trailers
+//   - chunked transfer encoding
+//   - binary file responses
+//   - custom response body handling
+//
+// The server shuts down gracefully on SIGINT or SIGTERM.
 func main() {
 	server, err := server.Serve(port, handler)
 	if err != nil {
@@ -73,65 +86,43 @@ func main() {
 	log.Println("Server gracefully stopped")
 }
 
+// handler is the main request router for the custom HTTP server.
+//
+// Different routes are intentionally designed to test specific
+// HTTP server features and response-writing methods.
+//
+// Routes:
+//
+//	/yourproblem -> tests 400 Bad Request responses
+//	/myproblem   -> tests 500 Internal Server Error responses
+//	/httpbin/*   -> tests chunked transfer encoding and trailers
+//	/video       -> tests binary file streaming and content-type handling
+//	default      -> tests standard 200 OK HTML responses
 func handler(w *response.Writer, req *request.Request) {
-	var statusCode response.StatusCode
+
+	var statusCode enums.StatusCode
 	var responseByte []byte
+
 	target := req.RequestLine.RequestTarget
+
 	switch {
 	case target == "/yourproblem":
-		statusCode = response.StatusCodeBadRequest
+		statusCode = enums.StatusCodeBadRequest
 		responseByte = request400()
 	case target == "/myproblem":
-		statusCode = response.StatusCodeInternalServerError
+		statusCode = enums.StatusCodeInternalServerError
 		responseByte = request500()
 	case strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/"):
-		res, err := http.Get(fmt.Sprintf("https://httpbin.org/%s", target[len("/httpbin/"):]))
-		if err != nil {
-			statusCode = response.StatusCodeInternalServerError
-			responseByte = request500()
-		} else {
-			w.WriteStatusLine(response.StatusCodeOK)
-			headers := w.GetDefaultHeaders(0)
-			headers.Delete("Content-Length")
-			headers.Set("Transfer-Encoding", "chunked")
-			headers.Set("Trailer", "X-Content-SHA256")
-			headers.Set("Trailer", "X-Content-Length")
-			fullBody := []byte{}
-			for {
-				data := make([]byte, 64)
-				n, err := res.Body.Read(data)
-				if err != nil {
-					break
-				}
+		handleHttpBin(w, target)
+		return
 
-				fullBody = append(fullBody, data[:n]...)
-				w.WriteChunkedBody(data)
-			}
-			w.WriteChunkedBodyDone()
-			trailers := headersPkg.NewHeaders()
-			out := sha256.Sum256(fullBody)
-			trailers.Set("X-Content-SHA256", toStr(out[:]))
-			trailers.Set("X-Content-Length", fmt.Sprintf("%d", len(fullBody)))
-			w.WriteTrailers(trailers)
-			return
-		}
 	case target == "/video":
 		{
-			f, err := os.ReadFile("assets/vim.mp4")
-			if err != nil {
-				log.Println("read file error:", err)
-				return
-			}
-			headers := w.GetDefaultHeaders(len(f))
-			headers.Replace("content-type", "video/mp4")
-
-			w.WriteStatusLine(response.StatusCodeOK)
-			w.WriteHeaders(headers)
-			w.WriteBody(f)
+			handleVideo(w)
 			return
 		}
 	default:
-		statusCode = response.StatusCodeOK
+		statusCode = enums.StatusCodeOK
 		responseByte = request200()
 	}
 
@@ -141,7 +132,7 @@ func handler(w *response.Writer, req *request.Request) {
 	}
 
 	headers := w.GetDefaultHeaders(len(responseByte))
-	headers.Replace("Content-Type", "text/html")
+	headers.Replace(constants.ContentType, enums.ContentTypeHTML.String())
 	err = w.WriteHeaders(headers)
 	if err != nil {
 		log.Println(err)
@@ -153,10 +144,65 @@ func handler(w *response.Writer, req *request.Request) {
 	}
 }
 
-func toStr(bytes []byte) string {
-	out := ""
-	for _, b := range bytes {
-		out += fmt.Sprintf("%02x", b)
+func handleHttpBin(w *response.Writer, target string) {
+	res, err := http.Get("https://httpbin.org/" + target[len("/httpbin/"):])
+	if err != nil {
+		w.WriteStatusLine(enums.StatusCodeInternalServerError)
+
+		headers := w.GetDefaultHeaders(len(request500()))
+		w.WriteHeaders(headers)
+		w.WriteBody(request500())
+		return
 	}
-	return out
+	defer res.Body.Close()
+
+	w.WriteStatusLine(enums.StatusCodeOK)
+
+	headers := w.GetDefaultHeaders(0)
+	headers.Delete(constants.ContentLength)
+	headers.Set(constants.TransferEncoding, "chunked")
+	headers.Set(constants.Trailer, constants.XContentSHA256)
+	headers.Set(constants.Trailer, constants.XContentLength)
+
+	w.WriteHeaders(headers)
+
+	fullBody := []byte{}
+
+	for {
+		data := make([]byte, 64)
+
+		n, err := res.Body.Read(data)
+		if err != nil {
+			break
+		}
+
+		fullBody = append(fullBody, data[:n]...)
+		w.WriteChunkedBody(data[:n])
+	}
+
+	w.WriteChunkedBodyDone()
+
+	trailers := headersPkg.NewHeaders()
+
+	out := sha256.Sum256(fullBody)
+
+	trailers.Set(constants.XContentSHA256, hex.EncodeToString(out[:]))
+	trailers.Set(constants.XContentLength, strconv.Itoa(len(fullBody)))
+
+	w.WriteTrailers(trailers)
+}
+
+func handleVideo(w *response.Writer) {
+	f, err := os.ReadFile("assets/vim.mp4")
+	if err != nil {
+		log.Println("read file error:", err)
+		return
+	}
+
+	headers := w.GetDefaultHeaders(len(f))
+	headers.Replace(constants.ContentType, enums.ContentTypeVideo.String())
+
+	w.WriteStatusLine(enums.StatusCodeOK)
+	w.WriteHeaders(headers)
+	w.WriteBody(f)
 }

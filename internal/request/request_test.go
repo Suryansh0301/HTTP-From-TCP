@@ -8,114 +8,170 @@ import (
 )
 
 func TestRequestLineParse(t *testing.T) {
-	// Test: Good GET Request line
-	reader := &chunkReader{
-		data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
-		numBytesPerRead: 10,
-	}
-	r, err := RequestFromReader(reader)
-	require.NoError(t, err)
-	require.NotNil(t, r)
-	assert.Equal(t, "GET", r.RequestLine.Method)
-	assert.Equal(t, "/", r.RequestLine.RequestTarget)
-	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+	tests := []struct {
+		name        string
+		data        string
+		chunkSize   int
+		expectErr   bool
+		method      string
+		target      string
+		httpVersion string
+	}{
 
-	// Test: incomplete GET Request line with path
-	reader = &chunkReader{
-		data:            "GET /coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
-		numBytesPerRead: 1,
-	}
-	r, err = RequestFromReader(reader)
-	require.NoError(t, err)
-	require.NotNil(t, r)
-	assert.Equal(t, "GET", r.RequestLine.Method)
-	assert.Equal(t, "/coffee", r.RequestLine.RequestTarget)
-	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+		{
+			name:        "valid GET request root path",
+			data:        "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+			chunkSize:   10,
+			method:      "GET",
+			target:      "/",
+			httpVersion: "1.1",
+		},
 
-	// Test: Good GET Request line with path
-	reader = &chunkReader{
-		data:            "GET /coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
-		numBytesPerRead: 3,
-	}
-	r, err = RequestFromReader(reader)
-	require.NoError(t, err)
-	require.NotNil(t, r)
-	assert.Equal(t, "GET", r.RequestLine.Method)
-	assert.Equal(t, "/coffee", r.RequestLine.RequestTarget)
-	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+		{
+			name:        "valid GET request with path chunk size 1",
+			data:        "GET /coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+			chunkSize:   1,
+			method:      "GET",
+			target:      "/coffee",
+			httpVersion: "1.1",
+		},
 
-	// Test: Invalid number of parts in request line
-	reader = &chunkReader{
-		data:            "/coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
-		numBytesPerRead: 3,
-	}
-	_, err = RequestFromReader(reader)
-	require.Error(t, err)
+		{
+			name:        "valid GET request with path chunk size 3",
+			data:        "GET /coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+			chunkSize:   3,
+			method:      "GET",
+			target:      "/coffee",
+			httpVersion: "1.1",
+		},
 
-	// Test: Invalid  POST Request line with path
-	reader = &chunkReader{
-		data:            "post /coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
-		numBytesPerRead: 3,
-	}
-	_, err = RequestFromReader(reader)
-	require.Error(t, err)
+		{
+			name:      "missing method in request line",
+			data:      "/coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+			chunkSize: 3,
+			expectErr: true,
+		},
 
-	// Test: Out of Order Request line
-	reader = &chunkReader{
-		data:            "/coffee HTTP/1.1 post\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
-		numBytesPerRead: 3,
-	}
-	_, err = RequestFromReader(reader)
-	require.Error(t, err)
+		{
+			name:      "lowercase method not allowed",
+			data:      "post /coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+			chunkSize: 3,
+			expectErr: true,
+		},
 
+		{
+			name:      "out of order request line",
+			data:      "/coffee HTTP/1.1 post\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+			chunkSize: 3,
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := &chunkReader{data: tt.data, numBytesPerRead: tt.chunkSize}
+			r, err := RequestFromReader(reader)
+			if tt.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, r)
+			assert.Equal(t, tt.method, r.RequestLine.Method)
+			assert.Equal(t, tt.target, r.RequestLine.RequestTarget)
+			assert.Equal(t, tt.httpVersion, r.RequestLine.HttpVersion)
+		})
+	}
 }
 
 func TestHeaderParse(t *testing.T) {
-	// Test: Standard Headers
-	reader := &chunkReader{
-		data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
-		numBytesPerRead: 3,
-	}
-	r, err := RequestFromReader(reader)
-	require.NoError(t, err)
-	require.NotNil(t, r)
-	assert.Equal(t, "localhost:42069", r.Headers.Get("host"))
-	assert.Equal(t, "curl/7.81.0", r.Headers.Get("user-agent"))
-	assert.Equal(t, "*/*", r.Headers.Get("accept"))
+	tests := []struct {
+		name          string
+		data          string
+		chunkSize     int
+		expectErr     bool
+		expectHeaders map[string]string
+	}{
 
-	// Test: Malformed Header
-	reader = &chunkReader{
-		data:            "GET / HTTP/1.1\r\nHost localhost:42069\r\n\r\n",
-		numBytesPerRead: 3,
+		{
+			name:      "standard headers parsed correctly",
+			data:      "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+			chunkSize: 3,
+			expectHeaders: map[string]string{
+				"host":       "localhost:42069",
+				"user-agent": "curl/7.81.0",
+				"accept":     "*/*",
+			},
+		},
+
+		{
+			name:      "malformed header missing colon",
+			data:      "GET / HTTP/1.1\r\nHost localhost:42069\r\n\r\n",
+			chunkSize: 3,
+			expectErr: true,
+		},
 	}
-	r, err = RequestFromReader(reader)
-	require.Error(t, err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := &chunkReader{data: tt.data, numBytesPerRead: tt.chunkSize}
+			r, err := RequestFromReader(reader)
+			if tt.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, r)
+			for key, val := range tt.expectHeaders {
+				assert.Equal(t, val, r.Headers.Get(key))
+			}
+		})
+	}
 }
 
 func TestBodyParse(t *testing.T) {
-	// Test: Standard Body
-	reader := &chunkReader{
-		data: "POST /submit HTTP/1.1\r\n" +
-			"Host: localhost:42069\r\n" +
-			"Content-Length: 13\r\n" +
-			"\r\n" +
-			"hello world!\n",
-		numBytesPerRead: 3,
-	}
-	r, err := RequestFromReader(reader)
-	require.NoError(t, err)
-	require.NotNil(t, r)
-	assert.Equal(t, "hello world!\n", string(r.Body))
+	tests := []struct {
+		name       string
+		data       string
+		chunkSize  int
+		expectErr  bool
+		expectBody string
+	}{
 
-	// Test: Body shorter than reported content length
-	reader = &chunkReader{
-		data: "POST /submit HTTP/1.1\r\n" +
-			"Host: localhost:42069\r\n" +
-			"Content-Length: 20\r\n" +
-			"\r\n" +
-			"partial content",
-		numBytesPerRead: 3,
+		{
+			name: "valid body matches content length",
+			data: "POST /submit HTTP/1.1\r\n" +
+				"Host: localhost:42069\r\n" +
+				"Content-Length: 13\r\n" +
+				"\r\n" +
+				"hello world!\n",
+			chunkSize:  3,
+			expectBody: "hello world!\n",
+		},
+
+		{
+			name: "body shorter than content length",
+			data: "POST /submit HTTP/1.1\r\n" +
+				"Host: localhost:42069\r\n" +
+				"Content-Length: 20\r\n" +
+				"\r\n" +
+				"partial content",
+			chunkSize: 3,
+			expectErr: true,
+		},
 	}
-	r, err = RequestFromReader(reader)
-	require.Error(t, err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := &chunkReader{data: tt.data, numBytesPerRead: tt.chunkSize}
+			r, err := RequestFromReader(reader)
+			if tt.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, r)
+			assert.Equal(t, tt.expectBody, string(r.Body))
+		})
+	}
 }
