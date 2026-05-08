@@ -95,7 +95,7 @@ func main() {
 //
 //	/yourproblem -> tests 400 Bad Request responses
 //	/myproblem   -> tests 500 Internal Server Error responses
-//	/httpbin/*   -> tests chunked transfer encoding and trailers
+//	/httpbin/   -> tests chunked transfer encoding and trailers
 //	/video       -> tests binary file streaming and content-type handling
 //	default      -> tests standard 200 OK HTML responses
 func handler(w *response.Writer, req *request.Request) {

@@ -50,6 +50,7 @@ func (h Headers) Parse(data []byte) (int, bool, error) {
 
 		header := data[:headerIdx]
 		data = data[headerIdx+2:]
+
 		bytesConsumed += headerIdx + 2
 		if len(header) == 0 {
 			return bytesConsumed, true, nil

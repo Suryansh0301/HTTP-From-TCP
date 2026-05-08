@@ -1,8 +1,7 @@
 package constants
 
 const (
-	CRLF = "\r\n"
-
+	CRLF             = "\r\n"
 	ContentType      = "Content-Type"
 	TransferEncoding = "Transfer-Encoding"
 	Trailer          = "Trailer"

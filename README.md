@@ -17,7 +17,7 @@ This project is a full implementation of an HTTP/1.1 server written in Go from s
 - HTTP response construction and writing
 - Chunked transfer encoding
 - Binary data support
-- Fully handwritten — zero external HTTP libraries
+- Fully handwritten — zero external HTTP libraries(apart for testing)
 
 ---
 
@@ -25,13 +25,32 @@ This project is a full implementation of an HTTP/1.1 server written in Go from s
 
 ```
 .
-├── main.go           # Entry point, starts the TCP listener
+├── cmd/
+│   ├── httpserver/
+│   │   ├── assets/
+│   │   │   └── vim.mp4
+│   │   └── main.go          # Entry point, starts the HTTP server
+│   ├── tcplistener/
+│   │   └── main.go          # Raw TCP listener utility
+│   └── udpsender/           # UDP sender utility
+├── constants/
+│   └── constants.go         # Shared constants (CRLF, header names, etc.)
+├── enums/
+│   └── enums.go             # Enums (status codes, content types, parse states)
+├── internal/
+│   ├── headers/
+│   │   ├── headers.go       # HTTP header parsing utilities
+│   │   └── headers_test.go
+│   ├── request/
+│   │   ├── request.go       # HTTP request parsing
+│   │   └── request_test.go
+│   └── response/
+│       └── response.go      # HTTP response building and writing
 ├── server/
-│   ├── server.go     # TCP server setup and connection loop
-│   ├── request.go    # HTTP request parsing
-│   ├── response.go   # HTTP response building and writing
-│   └── headers.go    # HTTP header parsing utilities
-└── README.md
+│   └── server.go            # TCP server setup and connection loop
+├── .gitignore
+├── go.mod
+└── go.sum
 ```
 
 ---
@@ -47,7 +66,7 @@ This project is a full implementation of an HTTP/1.1 server written in Go from s
 ```bash
 git clone https://github.com/Suryansh0301/HTTP-From-TCP.git
 cd HTTP-From-TCP
-go run main.go
+go run cmd/httpserver/main.go
 ```
 
 The server will start listening on `localhost:42069` by default.
@@ -59,6 +78,7 @@ curl -v http://localhost:42069/
 ```
 
 ---
+
 ## 🧠 How It Works
 
 ### TCP → HTTP
