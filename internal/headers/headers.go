@@ -30,6 +30,10 @@ func (h Headers) Set(key, value string) {
 	h[strings.ToLower(key)] = value
 }
 
+func (h Headers) Replace(key, value string) {
+	h[strings.ToLower(key)] = value
+}
+
 func (h Headers) Parse(data []byte) (int, bool, error) {
 	bytesConsumed := 0
 	for {

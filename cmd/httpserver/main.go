@@ -4,7 +4,6 @@ import (
 	"http-from-tcp/internal/request"
 	"http-from-tcp/internal/response"
 	"http-from-tcp/internal/server"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -27,20 +26,64 @@ func main() {
 	log.Println("Server gracefully stopped")
 }
 
-func handler(w io.Writer, req *request.Request) *server.HandlerError {
+func handler(w *response.Writer, req *request.Request) {
+	var statusCode response.StatusCode
+	var responseByte []byte
 	switch req.RequestLine.RequestTarget {
 	case "/yourproblem":
-		return &server.HandlerError{
-			StatusCode: response.StatusCodeBadRequest,
-			Message:    "Your problem is not my problem\n",
-		}
+		statusCode = response.StatusCodeBadRequest
+		responseByte = []byte(`
+		<html>
+		<head>
+		<title>400 Bad Request</title>
+		</head>
+		<body>
+		<h1>Bad Request</h1>
+		<p>Your request honestly kinda sucked.</p>
+		</body>
+		</html>
+		`)
 	case "/myproblem":
-		return &server.HandlerError{
-			StatusCode: response.StatusCodeInternalServerError,
-			Message:    "Woopsie, my bad\n",
-		}
+		statusCode = response.StatusCodeInternalServerError
+		responseByte = []byte(`
+		<html>
+		<head>
+		<title>500 Internal Server Error</title>
+		</head>
+		<body>
+		<h1>Internal Server Error</h1>
+		<p>Okay, you know what? This one is on me.</p>
+</body>
+</html>
+`)
 	default:
-		w.Write([]byte("All good, frfr\n"))
-		return nil
+		statusCode = response.StatusCodeOK
+		responseByte = []byte(`<html>
+		<head>
+		<title>200 OK</title>
+		</head>
+		<body>
+		<h1>Success!</h1>
+		<p>Your request was an absolute banger.</p>
+</body>
+</html>
+`)
+	}
+
+	err := w.WriteStatusLine(statusCode)
+	if err != nil {
+		log.Println(err)
+	}
+
+	headers := w.GetDefaultHeaders(len(responseByte))
+	headers.Replace("Content-Type", "text/html")
+	err = w.WriteHeaders(headers)
+	if err != nil {
+		log.Println(err)
+	}
+
+	_, err = w.WriteBody(responseByte)
+	if err != nil {
+		log.Println(err)
 	}
 }

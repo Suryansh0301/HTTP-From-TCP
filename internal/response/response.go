@@ -15,7 +15,26 @@ const (
 	StatusCodeInternalServerError StatusCode = "500"
 )
 
-func WriteStatusLine(w io.Writer, statusCode StatusCode) (err error) {
+func (W *Writer) GetDefaultHeaders(contentLen int) headers.Headers {
+	headers := headers.NewHeaders()
+
+	headers.Set("Content-Length", strconv.Itoa(contentLen))
+	headers.Set("Connection", "close")
+	headers.Set("Content-Type", "text/plain")
+	return headers
+}
+
+type Writer struct {
+	writer io.Writer
+}
+
+func NewWriter(conn io.Writer) *Writer {
+	return &Writer{
+		writer: conn,
+	}
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	var statusLine []byte
 	switch statusCode {
 	case StatusCodeOK:
@@ -28,36 +47,33 @@ func WriteStatusLine(w io.Writer, statusCode StatusCode) (err error) {
 		return fmt.Errorf("invalid error code")
 	}
 
-	_, err = w.Write(statusLine)
+	_, err := w.writer.Write(statusLine)
 	if err != nil {
 		return err
 	}
 
 	return nil
-
 }
 
-func GetDefaultHeaders(contentLen int) headers.Headers {
-	headers := headers.NewHeaders()
-
-	headers.Set("Content-Length", strconv.Itoa(contentLen))
-	headers.Set("Connection", "close")
-	headers.Set("Content-Type", "text/plain")
-	return headers
-}
-
-func WriteHeaders(w io.Writer, headers headers.Headers) error {
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
 	byteHeaders := make([]byte, 0)
 	for headerKey := range headers {
 		byteHeaders = fmt.Appendf(byteHeaders, "%s: %s\r\n", headerKey, headers[headerKey])
 	}
 	byteHeaders = fmt.Append(byteHeaders, "\r\n")
 
-	_, err := w.Write(byteHeaders)
+	_, err := w.writer.Write(byteHeaders)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
 
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }

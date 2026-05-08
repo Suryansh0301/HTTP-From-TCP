@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"http-from-tcp/internal/request"
 	"http-from-tcp/internal/response"
@@ -61,46 +60,13 @@ func (s *Server) listen(handleFunc Handler) {
 func (s *Server) handle(conn io.ReadWriteCloser, handleFunc Handler) {
 	defer conn.Close()
 
-	writeBuffer := bytes.NewBuffer(make([]byte, 0, 1024))
+	responseWriter := response.NewWriter(conn)
 
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		log.Print(err)
+		responseWriter.WriteStatusLine(response.StatusCodeBadRequest)
+		responseWriter.WriteHeaders(responseWriter.GetDefaultHeaders(0))
 	}
 
-	handleErr := handleFunc(writeBuffer, req)
-	if handleErr != nil {
-		s.HandleError(conn, handleErr)
-		return
-	}
-
-	err = response.WriteStatusLine(conn, response.StatusCodeOK)
-	if err != nil {
-		log.Print(err)
-	}
-
-	err = response.WriteHeaders(conn, response.GetDefaultHeaders(writeBuffer.Len()))
-	if err != nil {
-		log.Print(err)
-	}
-
-	_, err = conn.Write(writeBuffer.Bytes())
-	if err != nil {
-		log.Print(err)
-	}
-}
-
-func (s *Server) HandleError(conn io.Writer, handleErr *HandlerError) {
-	err := response.WriteStatusLine(conn, response.StatusCode(handleErr.StatusCode))
-	if err != nil {
-		log.Print(err)
-	}
-	err = response.WriteHeaders(conn, response.GetDefaultHeaders(len(handleErr.Message)))
-	if err != nil {
-		log.Print(err)
-	}
-	_, err = conn.Write([]byte(fmt.Sprintf("%s\r\n", handleErr.Message)))
-	if err != nil {
-		log.Print(err)
-	}
+	handleFunc(responseWriter, req)
 }
