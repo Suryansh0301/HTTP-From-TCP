@@ -1,6 +1,7 @@
 package response
 
 import (
+	"bytes"
 	"fmt"
 	"http-from-tcp/internal/headers"
 	"io"
@@ -72,6 +73,34 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 
 func (w *Writer) WriteBody(p []byte) (int, error) {
 	n, err := w.writer.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	var size int
+	n, err := w.WriteBody([]byte(fmt.Sprintf("%x\r\n", len(bytes.TrimRight(p, "\x00")))))
+	if err != nil {
+		return size, err
+	}
+	size += n
+	n, err = w.WriteBody(p[:len(bytes.TrimRight(p, "\x00"))])
+	if err != nil {
+		return size, err
+	}
+	size += n
+	n, err = w.WriteBody([]byte("\r\n"))
+	if err != nil {
+		return size, err
+	}
+	size += n
+	return size, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	n, err := w.WriteBody([]byte("0\r\n\r\n"))
 	if err != nil {
 		return 0, err
 	}
