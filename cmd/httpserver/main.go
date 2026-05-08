@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
+	headersPkg "http-from-tcp/internal/headers"
 	"http-from-tcp/internal/request"
 	"http-from-tcp/internal/response"
 	"http-from-tcp/internal/server"
@@ -92,20 +94,42 @@ func handler(w *response.Writer, req *request.Request) {
 			headers := w.GetDefaultHeaders(0)
 			headers.Delete("Content-Length")
 			headers.Set("Transfer-Encoding", "chunked")
-
+			headers.Set("Trailer", "X-Content-SHA256")
+			headers.Set("Trailer", "X-Content-Length")
+			fullBody := []byte{}
 			for {
 				data := make([]byte, 64)
-				_, err := res.Body.Read(data)
+				n, err := res.Body.Read(data)
 				if err != nil {
 					break
 				}
 
+				fullBody = append(fullBody, data[:n]...)
 				w.WriteChunkedBody(data)
 			}
 			w.WriteChunkedBodyDone()
+			trailers := headersPkg.NewHeaders()
+			out := sha256.Sum256(fullBody)
+			trailers.Set("X-Content-SHA256", toStr(out[:]))
+			trailers.Set("X-Content-Length", fmt.Sprintf("%d", len(fullBody)))
+			w.WriteTrailers(trailers)
 			return
 		}
+	case target == "/video":
+		{
+			f, err := os.ReadFile("assets/vim.mp4")
+			if err != nil {
+				log.Println("read file error:", err)
+				return
+			}
+			headers := w.GetDefaultHeaders(len(f))
+			headers.Replace("content-type", "video/mp4")
 
+			w.WriteStatusLine(response.StatusCodeOK)
+			w.WriteHeaders(headers)
+			w.WriteBody(f)
+			return
+		}
 	default:
 		statusCode = response.StatusCodeOK
 		responseByte = request200()
@@ -127,4 +151,12 @@ func handler(w *response.Writer, req *request.Request) {
 	if err != nil {
 		log.Println(err)
 	}
+}
+
+func toStr(bytes []byte) string {
+	out := ""
+	for _, b := range bytes {
+		out += fmt.Sprintf("%02x", b)
+	}
+	return out
 }
