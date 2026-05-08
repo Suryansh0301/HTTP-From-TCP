@@ -50,12 +50,12 @@ cd HTTP-From-TCP
 go run main.go
 ```
 
-The server will start listening on `localhost:8080` by default.
+The server will start listening on `localhost:42069` by default.
 
 ### Test It
 
 ```bash
-curl -v http://localhost:8080/
+curl -v http://localhost:42069/
 ```
 
 ---
